@@ -1261,14 +1261,14 @@
   function startMessage(resumeView) {
     const root = `下载 / ${currentHandle}`;
     if (scanMissed) {
-      if (batchScope === "photo") return `正在检查 @${currentHandle} 的照片，漏下的会补进「${root} / 照片」…`;
-      if (batchScope === "video") return `正在检查 @${currentHandle} 的视频，漏下的会补进「${root} / 视频」…`;
-      return `正在检查 @${currentHandle} 的照片和视频，分别补进「照片」和「视频」…`;
+      if (batchScope === "photo") return `正在检查 @${currentHandle} 的照片，漏下的会补进「${root}」…`;
+      if (batchScope === "video") return `正在检查 @${currentHandle} 的视频，漏下的会补进「${root}」…`;
+      return `正在检查 @${currentHandle} 的照片和视频，漏下的会补进「${root}」…`;
     }
-    if (batchScope === "photo") return `正在下载 @${currentHandle} 的照片，保存到「${root} / 照片」。碰到上次那条就停。`;
-    if (batchScope === "video") return `正在下载 @${currentHandle} 的视频，保存到「${root} / 视频」。碰到上次那条就停。`;
-    if (resumeView === "video") return `照片下完了，正在下载 @${currentHandle} 的视频，保存到「${root} / 视频」…`;
-    return `先下载 @${currentHandle} 的照片，再下载视频。两边分开存放。`;
+    if (batchScope === "photo") return `正在下载 @${currentHandle} 的照片，保存到「${root}」。碰到上次那条就停。`;
+    if (batchScope === "video") return `正在下载 @${currentHandle} 的视频，保存到「${root}」。碰到上次那条就停。`;
+    if (resumeView === "video") return `照片下完了，正在下载 @${currentHandle} 的视频，保存到「${root}」…`;
+    return `先下载 @${currentHandle} 的照片，再下载视频。都放在「${root}」。`;
   }
 
   async function start(fromResume, mode, resumeView, scope) {
@@ -1373,11 +1373,7 @@
     const saved = lastDownloads.completed || 0;
     const added = Math.max(0, saved - savedAtStart);
     const failed = lastDownloads.failed || 0;
-    const place = batchScope === "video"
-      ? `下载 / ${currentHandle} / 视频`
-      : batchScope === "photo"
-        ? `下载 / ${currentHandle} / 照片`
-        : `下载 / ${currentHandle} 下的「照片」和「视频」`;
+    const place = `下载 / ${currentHandle}`;
     if (scanMissed) {
       const what = scopeLabel(batchScope);
       return added

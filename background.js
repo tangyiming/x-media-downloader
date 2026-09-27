@@ -25,14 +25,44 @@ let generation = 0;
 let pumping = false;
 let downloadStats = { completed: 0, failed: 0, queued: 0, active: 0, updatedAt: 0 };
 
-function kindDir(view) {
-  return view === "video" ? "视频" : "照片";
-}
-
 function folderName(handle) {
   const name = String(handle || "").replace(/[^A-Za-z0-9_]/g, "");
   return name || "x-account";
 }
+
+const reservedPaths = new Map();
+
+function reservePath(url, filename) {
+  const queue = reservedPaths.get(url);
+  if (queue) queue.push(filename);
+  else reservedPaths.set(url, [filename]);
+}
+
+function takePath(url) {
+  const queue = reservedPaths.get(url);
+  if (!queue?.length) return "";
+  const filename = queue.shift();
+  if (!queue.length) reservedPaths.delete(url);
+  return filename;
+}
+
+function cancelPath(url, filename) {
+  const queue = reservedPaths.get(url);
+  if (!queue) return;
+  const index = queue.lastIndexOf(filename);
+  if (index >= 0) queue.splice(index, 1);
+  if (!queue.length) reservedPaths.delete(url);
+}
+
+function accountPath(handle, filename) {
+  return `${folderName(handle)}/${safeFilename(filename)}`;
+}
+
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  const wanted = takePath(item.url) || takePath(item.finalUrl);
+  if (!wanted) return;
+  suggest({ filename: wanted, conflictAction: "uniquify" });
+});
 
 function allowedDownloadUrl(url) {
   try {
@@ -169,12 +199,14 @@ async function beginDownload(entry) {
     if (entry.blobUrl) URL.revokeObjectURL(entry.blobUrl);
     return null;
   }
-  const filename = `${entry.handle}/${kindDir(entry.item.view)}/${entry.item.filename}`;
+  const filename = accountPath(entry.handle, entry.item.filename);
+  reservePath(url, filename);
   return new Promise((resolve) => {
     chrome.downloads.download(
       { url, filename, conflictAction: "uniquify", saveAs: false },
       (id) => {
         if (chrome.runtime.lastError || id == null) {
+          cancelPath(url, filename);
           if (entry.blobUrl) URL.revokeObjectURL(entry.blobUrl);
           resolve(null);
           return;
@@ -271,13 +303,15 @@ async function finishStream(meta, chunks) {
   const blob = new Blob(chunks, { type: meta.ext === "mp4" ? "video/mp4" : "video/mp2t" });
   chunks.length = 0;
   const blobUrl = URL.createObjectURL(blob);
-  const filename = `${handle}/${kindDir("video")}/${safeFilename(meta.filename)}`;
+  const filename = accountPath(handle, meta.filename);
+  reservePath(blobUrl, filename);
   active += 1;
   publishStats();
   chrome.downloads.download(
     { url: blobUrl, filename, conflictAction: "uniquify", saveAs: false },
     (id) => {
       if (chrome.runtime.lastError || id == null) {
+        cancelPath(blobUrl, filename);
         URL.revokeObjectURL(blobUrl);
         active = Math.max(0, active - 1);
         failed += 1;
