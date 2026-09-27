@@ -549,6 +549,10 @@
   }
 
   window.addEventListener("message", (event) => {
+    if (event.data?.source === "x-media-dl" && event.data.type === "command") {
+      onCommand({ detail: event.data.command });
+      return;
+    }
     if (event.source !== window || event.data?.source !== "x-media-dl") return;
     if (event.data.type === "reset") {
       if (!event.data.sameAccount) {
@@ -1535,9 +1539,12 @@
     if (raw && typeof raw === "object") {
       return { name: String(raw.name || ""), scope: normalizeScope(raw.scope) };
     }
-    const [name, scope] = String(raw || "").split(":");
+    const text = String(raw || "").split("#")[0];
+    const [name, scope] = text.split(":");
     return { name, scope: normalizeScope(scope) };
   }
+
+  let launchLock = false;
 
   function onCommand(event) {
     const { name, scope } = readCommand(event?.detail || document.documentElement?.dataset?.xMediaCmd || "");
@@ -1546,8 +1553,22 @@
       return;
     }
     if (name === "start" || name === "scan") {
+      if (launchLock || loopRunning) {
+        mirrorStatus();
+        return;
+      }
+      launchLock = true;
+      view.running = true;
+      view.phase = "scrolling";
+      view.mode = name === "scan" ? "scan" : "download";
+      view.scope = scope;
+      view.message = "正在开始…";
+      mirrorStatus();
+      showPanel();
       start(false, name === "scan" ? "scan" : "download", "", scope).catch((err) => {
         patchJob({ running: false, phase: "error", message: err?.message || "启动失败" });
+      }).finally(() => {
+        launchLock = false;
       });
       return;
     }
@@ -1556,9 +1577,11 @@
 
   function bindCommand() {
     const root = document.documentElement;
-    if (!root || root.dataset.xMediaCmdBound === "1") return;
+    if (!root) return false;
+    if (root.dataset.xMediaCmdBound === "1") return true;
     root.dataset.xMediaCmdBound = "1";
     root.addEventListener("x-media-dl-cmd", onCommand);
+    return true;
   }
 
   if (!bindCommand()) {

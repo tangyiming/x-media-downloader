@@ -8,6 +8,8 @@ const choiceButtons = [...document.querySelectorAll(".choices button")];
 
 let tabId = null;
 let running = false;
+let holdText = "";
+let holdUntil = 0;
 let lastView = { mode: "download", scope: "all", phase: "idle" };
 
 function isX(url) {
@@ -27,7 +29,7 @@ function render(status) {
     scope: scopeOf(view.scope),
     phase: view.phase || "idle",
   };
-  const usable = !!status?.onProfile || running;
+  const usable = !!status;
   if (!status?.onProfile) {
     accountEl.textContent = "当前不是用户主页";
   } else {
@@ -35,7 +37,9 @@ function render(status) {
       ? `@${status.handle} · 媒体页`
       : `@${status.handle} · 开始后会切到媒体页`;
   }
-  messageEl.textContent = view.message || "打开用户主页后选择下照片、下视频，或全部。";
+  messageEl.textContent = Date.now() < holdUntil
+    ? holdText
+    : (view.message || "打开用户主页后选择下照片、下视频，或全部。");
   foundEl.textContent = String(view.found || 0);
   savedEl.textContent = String(downloads.completed || 0);
   alreadyEl.textContent = String(view.already || 0);
@@ -63,8 +67,10 @@ async function pageCall(tabId, command) {
     func: (name) => {
       const root = document.documentElement;
       if (!root) return "";
-      root.dataset.xMediaCmd = name;
-      root.dispatchEvent(new CustomEvent("x-media-dl-cmd", { bubbles: true, detail: name }));
+      const command = `${name}#${Date.now()}`;
+      root.dataset.xMediaCmd = command;
+      window.postMessage({ source: "x-media-dl", type: "command", command }, "*");
+      root.dispatchEvent(new CustomEvent("x-media-dl-cmd", { bubbles: true, detail: command }));
       return root.dataset.xMediaState || "";
     },
     args: [command],
@@ -109,33 +115,48 @@ async function refresh() {
   }
 }
 
+function hold(text) {
+  holdText = text;
+  holdUntil = Date.now() + 6000;
+  messageEl.textContent = text;
+}
+
 async function runChoice(button) {
   const tab = await activeTab();
-  if (!tab?.id || !isX(tab.url)) return;
+  if (!tab?.id || !isX(tab.url)) {
+    hold("请先打开 x.com 上的用户主页。");
+    return;
+  }
   const mode = button.dataset.mode === "scan" ? "scan" : "download";
   const scope = scopeOf(button.dataset.scope);
   const active = running && lastView.mode === mode && lastView.scope === scope;
   for (const item of choiceButtons) item.disabled = true;
+  button.textContent = active ? "正在停止…" : "正在开始…";
+  hold(active ? "正在停止…" : "正在开始…");
   try {
     if (active) {
-      button.textContent = "正在停止…";
       await pageCall(tab.id, "stop");
       running = false;
-      refresh();
-      return;
+      holdUntil = 0;
+    } else {
+      const current = await pageCall(tab.id, "status");
+      if (!current?.hooked) {
+        hold("请先刷新这个 X 页面，再点批量下载。");
+        refresh();
+        return;
+      }
+      if (!current.onProfile) {
+        hold("请先打开某个用户的主页，地址类似 x.com/用户名 。");
+        refresh();
+        return;
+      }
+      const command = `${mode === "scan" ? "scan" : "start"}:${scope}`;
+      const started = await pageCall(tab.id, command);
+      holdUntil = 0;
+      if (started?.view?.message) messageEl.textContent = started.view.message;
     }
-    const current = await pageCall(tab.id, "status");
-    if (!current?.hooked) {
-      render({
-        onProfile: true,
-        view: { message: "请先刷新这个页面，再开始。这样从第一次加载就能拿到媒体。" },
-      });
-      return;
-    }
-    const command = `${mode === "scan" ? "scan" : "start"}:${scope}`;
-    await pageCall(tab.id, command);
   } catch (err) {
-    messageEl.textContent = "请刷新这个 X 页面后再试。";
+    hold("请刷新这个 X 页面后再试。");
   }
   refresh();
 }

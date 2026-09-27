@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X 媒体下载",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "description": "可选择只下载照片、只下载视频或全部，照片和视频分文件夹保存。",
   "minimum_chrome_version": "111",
   "permissions": ["downloads", "storage", "scripting"],
