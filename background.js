@@ -54,8 +54,14 @@ function cancelPath(url, filename) {
   if (!queue.length) reservedPaths.delete(url);
 }
 
+function phoneDownload() {
+  return /Android/i.test(globalThis.navigator?.userAgent || "");
+}
+
 function accountPath(handle, filename) {
-  return `${folderName(handle)}/${safeFilename(filename)}`;
+  const folder = folderName(handle);
+  const file = safeFilename(filename);
+  return phoneDownload() ? `${folder}_${file}` : `${folder}/${file}`;
 }
 
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {

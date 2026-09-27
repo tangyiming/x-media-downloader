@@ -540,7 +540,7 @@
     if (data.type === "stream-end") {
       if (soloPort) soloPort.postMessage({ type: "end" });
       soloPort = null;
-      setTweetButton(soloButtons.get(data.key), "ok", "已开始下载，文件在该账号的文件夹里");
+      setTweetButton(soloButtons.get(data.key), "ok", phoneDownload() ? "已开始下载，文件名以账号名开头，在「下载」里" : "已开始下载，文件在该账号的文件夹里");
       return;
     }
     if (data.type === "stream-fail") {
@@ -807,7 +807,9 @@
       return;
     }
     const extra = videoMissing ? "视频请先点开再下一次。" : "";
-    setTweetButton(button, "ok", `已开始下载到 @${info.handle} 文件夹。${extra}`.trim());
+    setTweetButton(button, "ok", (phoneDownload()
+      ? `已开始下载，文件名以 ${info.handle} 开头，在「下载」里。`
+      : `已开始下载到 @${info.handle} 文件夹。`) + extra);
   }
 
   function mountTweetButtons() {
@@ -1258,17 +1260,25 @@
     }
   }
 
+  function phoneDownload() {
+    return /Android/i.test(navigator.userAgent || "");
+  }
+
+  function savePlace(handle) {
+    return phoneDownload() ? `「下载」，文件名以 ${handle} 开头` : `「下载 / ${handle}」`;
+  }
+
   function startMessage(resumeView) {
-    const root = `下载 / ${currentHandle}`;
+    const root = savePlace(currentHandle);
     if (scanMissed) {
-      if (batchScope === "photo") return `正在检查 @${currentHandle} 的照片，漏下的会补进「${root}」…`;
-      if (batchScope === "video") return `正在检查 @${currentHandle} 的视频，漏下的会补进「${root}」…`;
-      return `正在检查 @${currentHandle} 的照片和视频，漏下的会补进「${root}」…`;
+      if (batchScope === "photo") return `正在检查 @${currentHandle} 的照片，漏下的会补进${root}…`;
+      if (batchScope === "video") return `正在检查 @${currentHandle} 的视频，漏下的会补进${root}…`;
+      return `正在检查 @${currentHandle} 的照片和视频，漏下的会补进${root}…`;
     }
-    if (batchScope === "photo") return `正在下载 @${currentHandle} 的照片，保存到「${root}」。碰到上次那条就停。`;
-    if (batchScope === "video") return `正在下载 @${currentHandle} 的视频，保存到「${root}」。碰到上次那条就停。`;
-    if (resumeView === "video") return `照片下完了，正在下载 @${currentHandle} 的视频，保存到「${root}」…`;
-    return `先下载 @${currentHandle} 的照片，再下载视频。都放在「${root}」。`;
+    if (batchScope === "photo") return `正在下载 @${currentHandle} 的照片，保存到${root}。碰到上次那条就停。`;
+    if (batchScope === "video") return `正在下载 @${currentHandle} 的视频，保存到${root}。碰到上次那条就停。`;
+    if (resumeView === "video") return `照片下完了，正在下载 @${currentHandle} 的视频，保存到${root}…`;
+    return `先下载 @${currentHandle} 的照片，再下载视频。都放在${root}。`;
   }
 
   async function start(fromResume, mode, resumeView, scope) {
@@ -1373,7 +1383,7 @@
     const saved = lastDownloads.completed || 0;
     const added = Math.max(0, saved - savedAtStart);
     const failed = lastDownloads.failed || 0;
-    const place = `下载 / ${currentHandle}`;
+    const place = savePlace(currentHandle);
     if (scanMissed) {
       const what = scopeLabel(batchScope);
       return added
@@ -1384,7 +1394,7 @@
     const streams = streamFailed.size ? `，${streamFailed.size} 个流媒体没有拼成文件` : "";
     const existing = alreadyKeys.size ? `，${alreadyKeys.size} 个之前已保存` : "";
     const stopNote = caughtUp ? "。已经到上次保存的位置，更早的没有重复下载" : "";
-    return `完成。本次新保存 ${saved} 个到「${place}」${existing}${skipped}${streams}${failed ? `，失败 ${failed} 个` : ""}${stopNote}。`;
+    return `完成。本次新保存 ${saved} 个到${place}${existing}${skipped}${streams}${failed ? `，失败 ${failed} 个` : ""}${stopNote}。`;
   }
 
   function stopJob(message) {
