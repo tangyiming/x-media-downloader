@@ -1,0 +1,110 @@
+:root {
+  color-scheme: light;
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+  color: #161616;
+  background: #fff;
+}
+
+body {
+  width: 320px;
+  margin: 0;
+  padding: 14px 14px 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+header p,
+#message,
+.note {
+  margin: 6px 0 0;
+  color: #444;
+}
+
+#stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 12px 0;
+}
+
+#stats div {
+  background: #f4f4f4;
+  border-radius: 8px;
+  padding: 6px 4px 5px;
+  text-align: center;
+}
+
+dt {
+  margin: 0;
+  color: #666;
+  font-size: 11px;
+}
+
+dd {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.group {
+  margin-top: 10px;
+}
+
+.group p {
+  margin: 0 0 6px;
+  color: #666;
+  font-size: 12px;
+}
+
+.choices {
+  display: flex;
+  gap: 6px;
+}
+
+.choices button {
+  flex: 1;
+}
+
+.choices.download button {
+  background: #111;
+  color: #fff;
+}
+
+.choices.scan button,
+#folder {
+  background: #eee;
+  color: #111;
+}
+
+#folder {
+  width: 100%;
+  margin-top: 8px;
+}
+
+button:disabled {
+  background: #e6e6e6 !important;
+  color: #999 !important;
+  cursor: default;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.note {
+  font-size: 12px;
+  color: #666;
+}

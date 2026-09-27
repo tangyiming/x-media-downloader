@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>X 媒体下载</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>X 媒体下载</h1>
+    <p id="account">打开 x.com 上的用户主页</p>
+  </header>
+  <p id="message">打开用户主页后选择下照片、下视频，或全部。照片和视频会分开放到账户名文件夹里。</p>
+  <dl id="stats">
+    <div><dt>发现</dt><dd id="found">0</dd></div>
+    <div><dt>本次保存</dt><dd id="saved">0</dd></div>
+    <div><dt>已有</dt><dd id="already">0</dd></div>
+    <div><dt>失败</dt><dd id="failed">0</dd></div>
+  </dl>
+  <div class="group">
+    <p>批量下载</p>
+    <div class="choices download">
+      <button id="dl-photo" type="button" data-mode="download" data-scope="photo">照片</button>
+      <button id="dl-video" type="button" data-mode="download" data-scope="video">视频</button>
+      <button id="dl-all" type="button" data-mode="download" data-scope="all">全部</button>
+    </div>
+  </div>
+  <div class="group">
+    <p>检查漏下</p>
+    <div class="choices scan">
+      <button id="scan-photo" type="button" data-mode="scan" data-scope="photo">照片</button>
+      <button id="scan-video" type="button" data-mode="scan" data-scope="video">视频</button>
+      <button id="scan-all" type="button" data-mode="scan" data-scope="all">全部</button>
+    </div>
+  </div>
+  <button id="folder" type="button">打开下载目录</button>
+  <p class="note">只下选中的那一种。选「全部」会先下照片，照片结束后再下视频。检查漏下也按照片、视频、全部分开，会扫到该栏底部，只补缺的。文件在「下载 / 账号名 / 照片」和「下载 / 账号名 / 视频」。单条帖子上的下载图标不受这里的选择影响。请让这个标签页保持在前台。</p>
+  <script src="popup.js"></script>
+</body>
+</html>
