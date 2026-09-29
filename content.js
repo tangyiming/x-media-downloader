@@ -198,13 +198,30 @@
     if (!Array.isArray(items)) return;
     for (const item of items) {
       if (!item?.key) continue;
-      if (!captured.has(item.key)) captured.set(item.key, item);
+      const previous = captured.get(item.key);
+      if (!previous) captured.set(item.key, item);
+      else if (!previous.text && item.text) previous.text = item.text;
       if (acceptLive) handleIncoming(item);
     }
   }
 
   function viewName() {
-    return new URLSearchParams(location.search).get("filter") === "photo" ? "photo" : "video";
+    if (new URLSearchParams(location.search).get("filter") === "photo") return "photo";
+    for (const tab of document.querySelectorAll('[role="tab"][aria-selected="true"], a[aria-selected="true"]')) {
+      const label = (tab.textContent || "").replace(/\s+/g, " ").trim();
+      if (/^(照片|圖片|图片|Photos?)$/i.test(label)) return "photo";
+      if (/^(视频|視頻|Videos?)$/i.test(label)) return "video";
+      try {
+        const href = tab.getAttribute("href") || tab.href || "";
+        if (!href) continue;
+        const url = new URL(href, location.origin);
+        if (!/\/media\/?$/i.test(url.pathname.replace(/\/+$/, "") + "/") && !/\/media$/i.test(url.pathname.replace(/\/+$/, ""))) continue;
+        if (url.searchParams.get("filter") === "photo") return "photo";
+      } catch (err) {
+        /* ignore */
+      }
+    }
+    return "video";
   }
 
   function viewLabel() {
@@ -311,6 +328,12 @@
     knownStreak = already ? knownStreak + 1 : 0;
   }
 
+  function canStopAtCursor() {
+    if (scanMissed) return false;
+    const view = viewName();
+    return !!(boundary[view] || savedCursors[view]?.tweetId);
+  }
+
   async function commitCursor() {
     for (const name of ["photo", "video"]) {
       const tweetId = newestSeen[name];
@@ -370,6 +393,7 @@
       filename: buildFilename(item),
       tweetId: item.tweetId || "",
       created: item.created || "",
+      text: item.text || "",
       view: itemView(item),
       kind: item.kind || "photo",
     });
@@ -426,6 +450,19 @@
       streamDone.add(item.key);
       streamsPending = Math.max(0, streamsPending - 1);
       scheduleStats();
+      await send({
+        type: "NOTE_ALBUM",
+        handle: currentHandle,
+        items: [{
+          key: item.key,
+          filename: buildFilename(item),
+          tweetId: item.tweetId || "",
+          created: item.created || "",
+          text: item.text || "",
+          kind: "video",
+          view: "video",
+        }],
+      });
       return;
     }
     noteBoundary(item, false);
@@ -444,6 +481,7 @@
         author: item.author || "",
         tweetId: item.tweetId || "",
         created: item.created || "",
+        text: item.text || "",
         index: item.index || 1,
       },
     }, "*");
@@ -489,6 +527,7 @@
         ext: file.ext === "mp4" ? "mp4" : "ts",
         tweetId: file.tweetId || "",
         created: file.created || "",
+        text: file.text || "",
         view: "video",
       });
       return;
@@ -527,6 +566,7 @@
         ext: file.ext === "mp4" ? "mp4" : "ts",
         tweetId: file.tweetId || "",
         created: file.created || "",
+        text: file.text || "",
         view: "video",
         solo: true,
         trackCursor: false,
@@ -646,6 +686,12 @@
     button.setAttribute("aria-label", title);
   }
 
+  function articleText(article) {
+    const node = article.querySelector("[data-testid='tweetText']");
+    if (!node) return "";
+    return String(node.innerText || node.textContent || "").replace(/\r\n/g, "\n").trim();
+  }
+
   function tweetIdentity(article) {
     const time = article.querySelector("time");
     const link = time?.closest("a[href*='/status/']");
@@ -667,9 +713,11 @@
   function collectTweetItems(article, info) {
     const items = [];
     const seen = new Set();
+    const text = articleText(article);
     const add = (item) => {
       if (!item?.key || seen.has(item.key) || item.skipped) return;
       seen.add(item.key);
+      if (!item.text && text) item = { ...item, text };
       items.push(item);
     };
     for (const item of captured.values()) {
@@ -693,6 +741,7 @@
           author: info.handle,
           tweetId: info.tweetId,
           created: info.created,
+          text,
           index: photoIndex,
         });
       }
@@ -722,6 +771,7 @@
         author: info.handle,
         tweetId: info.tweetId,
         created: info.created,
+        text,
         index: videoIndex,
       });
       }
@@ -756,13 +806,18 @@
         : "这条没有可下载的照片或视频");
       return;
     }
+    const captionText = files.find((item) => item.text)?.text
+      || streams.find((item) => item.text)?.text
+      || articleText(article);
     const payload = files.map((item) => ({
       key: item.key,
       url: item.url,
       filename: buildFilename(item),
       tweetId: info.tweetId,
       created: item.created || info.created,
+      text: item.text || captionText || "",
       view: item.kind === "video" ? "video" : "photo",
+      kind: item.kind === "video" ? "video" : "photo",
       solo: true,
       trackCursor: false,
     }));
@@ -776,6 +831,7 @@
       }
       already += (response.alreadyKeys || []).length;
       started += payload.length - (response.alreadyKeys || []).length;
+      send({ type: "FLUSH_ALBUM", handle: info.handle }).catch(() => {});
     }
     for (const item of streams) {
       const response = await send({ type: "HAS_DONE", handle: info.handle, keys: [item.key] });
@@ -796,6 +852,7 @@
           folder: info.handle,
           tweetId: info.tweetId,
           created: item.created || info.created,
+          text: item.text || captionText || "",
           index: item.index || 1,
           solo: true,
           trackCursor: false,
@@ -808,8 +865,8 @@
     }
     const extra = videoMissing ? "视频请先点开再下一次。" : "";
     setTweetButton(button, "ok", (phoneDownload()
-      ? `已开始下载，文件名以 ${info.handle} 开头，在「下载」里。`
-      : `已开始下载到 @${info.handle} 文件夹。`) + extra);
+      ? `已开始下载，文件名以 ${info.handle} 开头，在「下载」里。可用浏览器打开 album.html 看图和文案。`
+      : `已开始下载到 @${info.handle} 文件夹。打开里面的 album.html 可看图和文案。`) + extra);
   }
 
   function mountTweetButtons() {
@@ -1023,6 +1080,11 @@
         /* ignore bad href */
       }
     }
+    for (const tab of document.querySelectorAll('[role="tab"], a[role="tab"]')) {
+      const label = (tab.textContent || "").replace(/\s+/g, " ").trim();
+      if (kind === "photo" && /^(照片|圖片|图片|Photos?)$/i.test(label)) return tab;
+      if (kind === "video" && /^(视频|視頻|Videos?)$/i.test(label)) return tab;
+    }
     return null;
   }
 
@@ -1195,7 +1257,7 @@
             ? `正在找比 ${since} 更新的${viewLabel()} … 已发现 ${queuedKeys.size} 个`
             : `正在向下加载 @${currentHandle} 的${viewLabel()} … 已发现 ${queuedKeys.size} 个`,
       });
-      if (!scanMissed && (passedCutoff || knownStreak >= 12)) {
+      if (!scanMissed && canStopAtCursor() && (passedCutoff || knownStreak >= 40)) {
         await commitCursor();
         const switched = await openOtherView();
         if (switched === "navigating") return "navigating";
@@ -1210,7 +1272,7 @@
         }
         return "caughtup";
       }
-      if (floorStill >= 4) {
+      if (floorStill >= 12) {
         const switched = await openOtherView();
         if (switched === "navigating") return "navigating";
         if (switched) {
@@ -1222,7 +1284,8 @@
           await flushQueue();
           continue;
         }
-        await commitCursor();
+        // 滚得不够深时不要记下光标，否则下次会误以为「已经下到最新」而跳过更早的内容
+        if (rounds >= 30) await commitCursor();
         return "drained";
       }
       if (rounds >= 4000) {
@@ -1265,7 +1328,9 @@
   }
 
   function savePlace(handle) {
-    return phoneDownload() ? `「下载」，文件名以 ${handle} 开头` : `「下载 / ${handle}」`;
+    return phoneDownload()
+      ? `「下载」，文件名以 ${handle} 开头；用浏览器打开 ${handle}_album.html 看图和文案`
+      : `「下载 / ${handle}」；打开 album.html 可看图和文案`;
   }
 
   function startMessage(resumeView) {
@@ -1279,6 +1344,33 @@
     if (batchScope === "video") return `正在下载 @${currentHandle} 的视频，保存到${root}。碰到上次那条就停。`;
     if (resumeView === "video") return `照片下完了，正在下载 @${currentHandle} 的视频，保存到${root}…`;
     return `先下载 @${currentHandle} 的照片，再下载视频。都放在${root}。`;
+  }
+
+  function albumStatusNote(response) {
+    if (response?.skipped) {
+      if (response.reason === "unchanged") return "图集已有，无需更新。";
+      return "";
+    }
+    if (response?.ok) return "图集已保存。";
+    if (response?.error) return `图集生成失败：${response.error}`;
+    return "图集可能未写出，请重新加载插件后再试一次。";
+  }
+
+  async function flushAlbumNow(handle, announce) {
+    if (!handle) return null;
+    if (announce) {
+      await patchJob({
+        running: true,
+        phase: "album",
+        handle,
+        message: "正在整理图集…",
+      });
+    }
+    try {
+      return await send({ type: "FLUSH_ALBUM", handle });
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err || "图集导出失败") };
+    }
   }
 
   async function start(fromResume, mode, resumeView, scope) {
@@ -1299,6 +1391,15 @@
       scanMissed = mode === "scan";
     }
     savedAtStart = lastDownloads.completed || 0;
+    try {
+      const resetKey = `x-media-dl-cursor-reset-30:${profile.handle.toLowerCase()}`;
+      if (!fromResume && !sessionStorage.getItem(resetKey)) {
+        await send({ type: "CLEAR_CURSOR", handle: profile.handle });
+        sessionStorage.setItem(resetKey, "1");
+      }
+    } catch (err) {
+      /* ignore */
+    }
     const cursor = await send({ type: "GET_CURSOR", handle: currentHandle });
     savedCursors = { photo: cursor?.photo || null, video: cursor?.video || null };
     boundary = {
@@ -1330,6 +1431,8 @@
 
     loopRunning = true;
     showPanel();
+    let finishedHandle = currentHandle;
+    let albumFlushed = false;
     try {
       await patchJob({
         running: true,
@@ -1363,6 +1466,10 @@
       if (stopRequested) return;
       leftWatch = false;
       acceptLive = false;
+
+      const added = Math.max(0, (lastDownloads.completed || 0) - savedAtStart);
+      const albumResponse = await flushAlbumNow(finishedHandle, added > 0);
+      albumFlushed = true;
       await patchJob({
         running: false,
         phase: "done",
@@ -1370,12 +1477,20 @@
         found: queuedKeys.size,
         skipped: skippedKeys.size,
         already: alreadyKeys.size,
-        message: doneMessage(result === "caughtup"),
+        message: `${doneMessage(result === "caughtup")}${albumStatusNote(albumResponse)}`,
         mode: scanMissed ? "scan" : "download",
         scope: batchScope,
       });
     } finally {
       loopRunning = false;
+      const handle = finishedHandle || currentHandle;
+      if (handle && !albumFlushed) {
+        try {
+          await send({ type: "FLUSH_ALBUM", handle });
+        } catch (err) {
+          /* 跳栏中途退出也尽量写出图集 */
+        }
+      }
     }
   }
 

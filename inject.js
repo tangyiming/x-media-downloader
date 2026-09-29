@@ -116,7 +116,7 @@
       try {
         if (!shouldPublish(url) || !data) return;
         const items = [];
-        walk(data, { tweetId: "", created: "", author: "" }, items, 0);
+        walk(data, { tweetId: "", created: "", author: "", text: "" }, items, 0);
         if (!items.length) return;
         all.push(...items);
         post({ type: "media", items });
@@ -184,20 +184,44 @@
 
   function isTweetNode(node) {
     const typeName = node.__typename;
-    if (typeName === "Tweet" || typeName === "TweetWithVisibilityResults") return true;
+    if (typeName === "Tweet") return true;
+    if (typeName === "TweetWithVisibilityResults") return true;
     const legacy = node.legacy;
-    return !!(legacy && (typeof legacy.full_text === "string" || legacy.extended_entities));
+    return !!(legacy && (typeof legacy.full_text === "string" || Array.isArray(legacy.extended_entities?.media)));
+  }
+
+  function tweetPayload(node) {
+    if (node?.__typename === "TweetWithVisibilityResults" && node.tweet && typeof node.tweet === "object") {
+      return node.tweet;
+    }
+    return node;
   }
 
   function authorOf(node) {
-    const user = node?.core?.user_results?.result || node?.user_results?.result;
+    const tweet = tweetPayload(node);
+    const user = tweet?.core?.user_results?.result || tweet?.user_results?.result;
     return user?.legacy?.screen_name || user?.core?.screen_name || user?.screen_name || "";
   }
 
+  function tweetText(node) {
+    const tweet = tweetPayload(node);
+    const note = tweet?.note_tweet?.note_tweet_results?.result?.text;
+    if (typeof note === "string" && note.trim()) return note.replace(/\r\n/g, "\n").trim();
+    const legacy = tweet?.legacy || tweet;
+    const full = legacy?.full_text;
+    if (typeof full !== "string" || !full.trim()) return "";
+    const range = legacy.display_text_range;
+    if (Array.isArray(range) && range.length === 2 && Number.isInteger(range[0]) && Number.isInteger(range[1])) {
+      return full.slice(range[0], range[1]).replace(/\r\n/g, "\n").trim();
+    }
+    return full.replace(/\r\n/g, "\n").trim();
+  }
+
   function mediaLists(node) {
-    const extended = node.extended_entities?.media || node.legacy?.extended_entities?.media;
+    const tweet = tweetPayload(node);
+    const extended = tweet.extended_entities?.media || tweet.legacy?.extended_entities?.media;
     if (Array.isArray(extended) && extended.length) return [extended];
-    const basic = node.entities?.media || node.legacy?.entities?.media;
+    const basic = tweet.entities?.media || tweet.legacy?.entities?.media;
     if (Array.isArray(basic) && basic.length) return [basic];
     return [];
   }
@@ -211,10 +235,12 @@
 
     let local = ctx;
     if (isTweetNode(node)) {
+      const tweet = tweetPayload(node);
       local = {
-        tweetId: /^\d{5,}$/.test(node.rest_id || "") ? node.rest_id : ctx.tweetId,
-        created: node.legacy?.created_at || ctx.created || "",
+        tweetId: /^\d{5,}$/.test(tweet.rest_id || "") ? tweet.rest_id : ctx.tweetId,
+        created: tweet.legacy?.created_at || ctx.created || "",
         author: authorOf(node) || ctx.author || "",
+        text: tweetText(node) || ctx.text || "",
       };
     }
 
@@ -291,6 +317,7 @@
           author: ctx.author || "",
           tweetId: ctx.tweetId || "",
           created: ctx.created || "",
+          text: ctx.text || "",
           index,
         });
         return;
@@ -305,6 +332,7 @@
         author: ctx.author || "",
         tweetId: ctx.tweetId || "",
         created: ctx.created || "",
+        text: ctx.text || "",
         index,
       });
       return;
@@ -322,6 +350,7 @@
       author: ctx.author || "",
       tweetId: ctx.tweetId || "",
       created: ctx.created || "",
+      text: ctx.text || "",
       index,
     });
   }
@@ -586,6 +615,7 @@
       author: item.author || "",
       tweetId: item.tweetId || "",
       created: item.created || "",
+      text: item.text || "",
       index: item.index || 1,
       ext: containerExt(playlist.initUrl, playlist.parts),
       epoch,

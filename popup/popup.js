@@ -5,11 +5,13 @@ const savedEl = document.getElementById("saved");
 const alreadyEl = document.getElementById("already");
 const failedEl = document.getElementById("failed");
 const choiceButtons = [...document.querySelectorAll(".choices button")];
+const resetBtn = document.getElementById("reset");
 
 let tabId = null;
 let running = false;
 let holdText = "";
 let holdUntil = 0;
+let lastHandle = "";
 let lastView = { mode: "download", scope: "all", phase: "idle" };
 
 function isX(url) {
@@ -30,6 +32,7 @@ function render(status) {
     phase: view.phase || "idle",
   };
   const usable = !!status;
+  lastHandle = status?.onProfile && status.handle ? String(status.handle) : "";
   if (!status?.onProfile) {
     accountEl.textContent = "当前不是用户主页";
   } else {
@@ -54,6 +57,7 @@ function render(status) {
     else button.textContent = labels[scope];
     button.disabled = !usable || (running && !active);
   }
+  if (resetBtn) resetBtn.disabled = !lastHandle || running;
 }
 
 async function activeTab() {
@@ -169,6 +173,24 @@ for (const button of choiceButtons) {
 
 document.getElementById("folder").addEventListener("click", () => {
   chrome.downloads.showDefaultFolder();
+});
+
+resetBtn.addEventListener("click", async () => {
+  if (!lastHandle || running) return;
+  const ok = window.confirm(
+    `清除 @${lastHandle} 的已下记录、游标和图集缓存？\n本地已下载的文件不会删除。之后可用「检查漏下」重新补视频或照片。`
+  );
+  if (!ok) return;
+  resetBtn.disabled = true;
+  hold("正在重置进度…");
+  try {
+    const result = await chrome.runtime.sendMessage({ type: "RESET_PROGRESS", handle: lastHandle });
+    if (result?.ok) hold(`已重置 @${lastHandle} 的进度。请再点「检查漏下」选视频或全部。`);
+    else hold("重置失败，请重新加载插件后再试。");
+  } catch (err) {
+    hold("重置失败，请重新加载插件后再试。");
+  }
+  refresh();
 });
 
 async function boot() {

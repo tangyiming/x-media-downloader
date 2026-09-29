@@ -80,12 +80,14 @@ dd {
 }
 
 .choices.scan button,
-#folder {
+#folder,
+#reset {
   background: #eee;
   color: #111;
 }
 
-#folder {
+#folder,
+#reset {
   width: 100%;
   margin-top: 8px;
 }
