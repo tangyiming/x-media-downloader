@@ -1,42 +1,42 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>X 媒体下载</title>
+  <title>X Media Downloader</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <h1>X 媒体下载</h1>
-    <p id="account">打开 x.com 上的用户主页</p>
+    <h1>X Media Downloader</h1>
+    <p id="account">Open a user profile on x.com</p>
   </header>
-  <p id="message">打开用户主页后选择下照片、下视频，或全部。会生成 album.html，打开即可看图和文案。电脑放进账号文件夹，手机上文件名以账号名开头。</p>
+  <p id="message">Open a profile, then download photos, videos, or all. Builds album.html so you can browse images and captions. Desktop: account folder. Android: account name prefixed on each filename.</p>
   <dl id="stats">
-    <div><dt>发现</dt><dd id="found">0</dd></div>
-    <div><dt>本次保存</dt><dd id="saved">0</dd></div>
-    <div><dt>已有</dt><dd id="already">0</dd></div>
-    <div><dt>失败</dt><dd id="failed">0</dd></div>
+    <div><dt>Found</dt><dd id="found">0</dd></div>
+    <div><dt>Saved</dt><dd id="saved">0</dd></div>
+    <div><dt>Already</dt><dd id="already">0</dd></div>
+    <div><dt>Failed</dt><dd id="failed">0</dd></div>
   </dl>
   <div class="group">
-    <p>批量下载</p>
+    <p>Batch download</p>
     <div class="choices download">
-      <button id="dl-photo" type="button" data-mode="download" data-scope="photo">照片</button>
-      <button id="dl-video" type="button" data-mode="download" data-scope="video">视频</button>
-      <button id="dl-all" type="button" data-mode="download" data-scope="all">全部</button>
+      <button id="dl-photo" type="button" data-mode="download" data-scope="photo">Photos</button>
+      <button id="dl-video" type="button" data-mode="download" data-scope="video">Videos</button>
+      <button id="dl-all" type="button" data-mode="download" data-scope="all">All</button>
     </div>
   </div>
   <div class="group">
-    <p>检查漏下</p>
+    <p>Check for misses</p>
     <div class="choices scan">
-      <button id="scan-photo" type="button" data-mode="scan" data-scope="photo">照片</button>
-      <button id="scan-video" type="button" data-mode="scan" data-scope="video">视频</button>
-      <button id="scan-all" type="button" data-mode="scan" data-scope="all">全部</button>
+      <button id="scan-photo" type="button" data-mode="scan" data-scope="photo">Photos</button>
+      <button id="scan-video" type="button" data-mode="scan" data-scope="video">Videos</button>
+      <button id="scan-all" type="button" data-mode="scan" data-scope="all">All</button>
     </div>
   </div>
-  <button id="folder" type="button">打开下载目录</button>
-  <button id="reset" type="button" disabled>重置进度</button>
-  <p class="note">只下选中的那一种。选「全部」会先下照片，照片结束后再下视频。检查漏下也按照片、视频、全部分开，会扫到该栏底部，只补缺的。每个账号会维护一份 album.html，下载结束后用浏览器打开即可看图和文案。电脑上在「下载 / 账号名」。手机上在「下载」，文件名以账号名开头。若视频被跳过、或想整号重下，先点「重置进度」清掉本号的已下记录和游标，再点「检查漏下」选视频或全部。若中途停过，请再点一次批量下载或「检查漏下」补全。单条帖子上的下载图标不受这里的选择影响。请让这个标签页保持在前台。</p>
+  <button id="folder" type="button">Open downloads folder</button>
+  <button id="reset" type="button" disabled>Reset progress</button>
+  <p class="note">Only downloads the type you pick. All does photos first, then videos. Check for misses also splits by photos / videos / all, scrolls to the bottom of that tab, and only fills gaps. Each account keeps an album.html — open it in a browser to see media and captions. Desktop: Downloads / account. Android: Downloads, filenames start with the account name. If videos were skipped or you want a full re-download, Reset progress clears this account’s done list and cursors, then use Check for misses for videos or all. If you stopped mid-run, run batch download or Check for misses again. Per-tweet download buttons ignore these choices. Keep this tab in the foreground.</p>
   <script src="popup.js"></script>
 </body>
 </html>

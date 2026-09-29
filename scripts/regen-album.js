@@ -33,7 +33,7 @@ function renderAlbum(account, album) {
         return String(b[0]).localeCompare(String(a[0]));
       }
     });
-  const empty = '<p class="text muted">还没有可展示的媒体。</p>';
+  const empty = '<p class="text muted">No media to show yet.</p>';
   const articles = posts.map(([tweetId, post]) => {
     const mediaHtml = post.media.map((entry) => {
       const src = escapeHtml(entry.filename);
@@ -45,7 +45,7 @@ function renderAlbum(account, album) {
     const text = String(post.text || "").trim();
     const textHtml = text
       ? `<p class="text">${escapeHtml(text).replace(/\n/g, "<br>")}</p>`
-      : '<p class="text muted">这条没有文案</p>';
+      : '<p class="text muted">No caption</p>';
     const when = formatAlbumDate(post.created);
     return `<article id="t${escapeHtml(tweetId)}">
   <header>
@@ -58,11 +58,11 @@ function renderAlbum(account, album) {
   }).join("\n");
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>@${escapeHtml(account)} 图集</title>
+<title>@${escapeHtml(account)} album</title>
 <style>
   :root {
     color-scheme: light;
@@ -142,7 +142,7 @@ function renderAlbum(account, album) {
 <main>
   <div class="hero">
     <h1>@${escapeHtml(account)}</h1>
-    <p>共 ${posts.length} 条 · 和这个文件同目录的图片、视频会显示在下面</p>
+    <p>${posts.length} posts · Photos and videos next to this file show below</p>
   </div>
   ${articles || empty}
 </main>

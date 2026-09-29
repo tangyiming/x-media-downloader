@@ -109,7 +109,7 @@ async function blobToDownloadUrl(blob) {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   if (bytes.length > 1_800_000) {
-    throw new Error("文件过大，当前环境无法中转下载");
+    throw new Error("File too large to proxy in this environment");
   }
   const type = blob.type || "application/octet-stream";
   return { url: `data:${type};base64,${bytesToBase64(bytes)}`, revoke: false };
@@ -308,7 +308,7 @@ async function handleDelta(delta) {
       waiter.resolve(
         state === "complete"
           ? { ok: true }
-          : { ok: false, error: delta.error?.current || "图集下载被中断" }
+          : { ok: false, error: delta.error?.current || "Album download interrupted" }
       );
     }
     publishStats();
@@ -473,7 +473,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "FLUSH_ALBUM") {
     flushAlbum(folderName(message.handle))
       .then((result) => sendResponse(result && typeof result === "object" ? result : { ok: !!result }))
-      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err || "图集导出失败") }));
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err || "Album export failed") }));
     return true;
   }
   if (message?.type === "NOTE_ALBUM") {
@@ -486,7 +486,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return { ok: true };
       })
       .then((result) => sendResponse(result && typeof result === "object" ? result : { ok: true }))
-      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err || "图集更新失败") }));
+      .catch((err) => sendResponse({ ok: false, error: String(err?.message || err || "Album update failed") }));
     return true;
   }
   if (message?.type === "STOP") {
@@ -702,7 +702,7 @@ function waitAlbumDownload(id, timeoutMs = 20000) {
           }
         }
       }
-      resolve({ ok: false, error: "写出图集超时" });
+      resolve({ ok: false, error: "Album write timed out" });
     }, timeoutMs);
     albumWaiters.set(id, {
       resolve: (result) => {
@@ -823,7 +823,7 @@ function renderAlbum(handle, album) {
     const text = String(post.text || "").trim();
     const textHtml = text
       ? `<p class="text">${escapeHtml(text).replace(/\n/g, "<br>")}</p>`
-      : `<p class="text muted">这条没有文案</p>`;
+      : `<p class="text muted">No caption</p>`;
     const when = formatAlbumDate(post.created);
     return `<article id="t${escapeHtml(tweetId)}">
   <header>
@@ -836,11 +836,11 @@ function renderAlbum(handle, album) {
   }).join("\n");
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>@${escapeHtml(handle)} 图集</title>
+<title>@${escapeHtml(handle)} album</title>
 <style>
   :root {
     color-scheme: light;
@@ -920,9 +920,9 @@ function renderAlbum(handle, album) {
 <main>
   <div class="hero">
     <h1>@${escapeHtml(handle)}</h1>
-    <p>共 ${posts.length} 条 · 和这个文件同目录的图片、视频会显示在下面</p>
+    <p>${posts.length} posts · Photos and videos next to this file show below</p>
   </div>
-  ${articles || "<p class=\"text muted\">还没有可展示的媒体。</p>"}
+  ${articles || "<p class=\"text muted\">No media to show yet.</p>"}
 </main>
 </body>
 </html>`;
@@ -951,14 +951,14 @@ async function exportAlbum(handle) {
   const safeHandle = folderName(handle);
   const album = await loadAlbum(safeHandle);
   if (!Object.keys(album.posts || {}).length) {
-    return { ok: false, error: "还没有可写入图集的媒体记录（请先成功下载至少一条，或确认检查漏下已扫到帖子）" };
+    return { ok: false, error: "No media records for the album yet (download at least one item, or run Check for misses until posts are found)" };
   }
   for (const [id, entry] of [...activeMeta.entries()]) {
     if (!(entry.albumWrite && entry.handle === safeHandle)) continue;
     const waiter = albumWaiters.get(id);
     if (waiter) {
       albumWaiters.delete(id);
-      waiter.resolve({ ok: false, error: "被新的图集导出替换" });
+      waiter.resolve({ ok: false, error: "Replaced by a newer album export" });
     }
     try {
       chrome.downloads.cancel(id);
@@ -981,10 +981,10 @@ async function exportAlbum(handle) {
   try {
     dataUrl = albumHtmlToDataUrl(html);
   } catch (err) {
-    return { ok: false, error: String(err?.message || err || "图集内容编码失败") };
+    return { ok: false, error: String(err?.message || err || "Failed to encode album content") };
   }
   if (dataUrl.length > 2_000_000) {
-    return { ok: false, error: "图集过大，无法用 data URL 写出，请减少帖子数量后重试" };
+    return { ok: false, error: "Album too large for a data URL — reduce post count and retry" };
   }
 
   const startDownload = (conflictAction) => {
@@ -997,7 +997,7 @@ async function exportAlbum(handle) {
       };
       const timer = setTimeout(() => {
         cancelPath(dataUrl, filename);
-        finish({ id: null, error: "启动图集下载超时" });
+        finish({ id: null, error: "Timed out starting album download" });
       }, 8000);
       reservePath(dataUrl, filename, conflictAction);
       try {
@@ -1020,7 +1020,7 @@ async function exportAlbum(handle) {
               cancelPath(dataUrl, filename);
               finish({
                 id: null,
-                error: chrome.runtime.lastError?.message || "无法启动图集下载",
+                error: chrome.runtime.lastError?.message || "Could not start album download",
               });
               return;
             }
@@ -1033,7 +1033,7 @@ async function exportAlbum(handle) {
         cancelPath(dataUrl, filename);
         finish({
           id: null,
-          error: String(err?.message || err || "无法启动图集下载"),
+          error: String(err?.message || err || "Could not start album download"),
         });
       }
     });
@@ -1044,12 +1044,12 @@ async function exportAlbum(handle) {
     started = await startDownload("uniquify");
   }
   if (started.id == null) {
-    return { ok: false, error: started.error || "无法启动图集下载" };
+    return { ok: false, error: started.error || "Could not start album download" };
   }
 
   const result = await waitAlbumDownload(started.id, 20000);
   if (!result.ok) {
-    return { ok: false, error: result.error || "图集文件没有保存成功" };
+    return { ok: false, error: result.error || "Album file did not save" };
   }
   await chrome.storage.local.remove(`albumDirty:${safeHandle}`);
   return { ok: true };

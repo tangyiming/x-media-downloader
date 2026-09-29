@@ -45,7 +45,7 @@
   let view = {
     running: false,
     phase: "idle",
-    message: "打开用户主页后点开始。插件会进入媒体页，慢慢向下加载并保存。",
+    message: "Open a profile and tap Start. The extension opens Media, scrolls slowly, and saves.",
     handle: "",
     found: 0,
     skipped: 0,
@@ -244,7 +244,7 @@
   }
 
   function viewLabel() {
-    return viewName() === "photo" ? "照片" : "视频";
+    return viewName() === "photo" ? "photos" : "videos";
   }
 
   function seenViews() {
@@ -375,9 +375,9 @@
   }
 
   function scopeLabel(scope) {
-    if (scope === "photo") return "照片";
-    if (scope === "video") return "视频";
-    return "照片和视频";
+    if (scope === "photo") return "photos";
+    if (scope === "video") return "videos";
+    return "photos and videos";
   }
 
   function acceptsItem(item) {
@@ -524,7 +524,7 @@
     }
     if (data.epoch !== streamEpoch) return;
     if (data.type === "stream-progress" && view.phase === "downloading") {
-      patchJob({ message: `正在把流媒体拼成视频（${data.got}/${data.total}）…` });
+      patchJob({ message: `Assembling stream into video (${data.got}/${data.total})…` });
       return;
     }
     if (data.type === "stream-fail") {
@@ -599,11 +599,11 @@
     if (data.type === "stream-end") {
       if (soloPort) soloPort.postMessage({ type: "end" });
       soloPort = null;
-      setTweetButton(soloButtons.get(data.key), "ok", phoneDownload() ? "已开始下载，文件名以账号名开头，在「下载」里" : "已开始下载，文件在该账号的文件夹里");
+      setTweetButton(soloButtons.get(data.key), "ok", phoneDownload() ? "Download started — filename starts with the account name, in Downloads" : "Download started — file is in this account's folder");
       return;
     }
     if (data.type === "stream-fail") {
-      setTweetButton(soloButtons.get(data.key), "fail", "这条视频没有保存下来");
+      setTweetButton(soloButtons.get(data.key), "fail", "This video did not save");
     }
   }
 
@@ -619,7 +619,7 @@
         domIndex.clear();
       }
       if (leftWatch && currentHandle && !isMediaPath(currentHandle)) {
-        stopJob("已离开媒体页，下载已停下。回到该账号的媒体页后可以继续。");
+        stopJob("Left the Media tab — download stopped. Return to this account's Media tab to continue.");
       }
       return;
     }
@@ -703,7 +703,7 @@
     button.dataset.busy = state === "busy" ? "1" : "0";
     button.title = title;
     button.setAttribute("aria-label", title);
-    if (state !== "busy" || /等待|查找/.test(String(title || ""))) showTweetToast(button, title);
+    if (state !== "busy" || /waiting|looking|Finding|Waiting/i.test(String(title || ""))) showTweetToast(button, title);
   }
 
   function showTweetToast(anchor, text) {
@@ -910,7 +910,7 @@
 
     const needsVideo = tweetHasVideo(article);
     if (needsVideo) {
-      setTweetButton(button, "busy", "正在等待视频地址…");
+      setTweetButton(button, "busy", "Waiting for video URL…");
       nudgeTweetVideo(article);
     }
 
@@ -930,10 +930,10 @@
     if (button.dataset.busy === "1") return;
     const info = tweetIdentity(article);
     if (!info) {
-      setTweetButton(button, "fail", "没有找到这条帖子");
+      setTweetButton(button, "fail", "Could not find this post");
       return;
     }
-    setTweetButton(button, "busy", "正在查找这条里的照片和视频…");
+    setTweetButton(button, "busy", "Looking for photos and videos in this post…");
     window.postMessage({ source: "x-media-dl", type: "pull" }, "*");
     await sleep(120);
     const waited = await waitForTweetMedia(article, info, button);
@@ -942,8 +942,8 @@
     const videoMissing = tweetHasVideo(article) && !files.some((item) => item.kind === "video") && !streams.length;
     if (!files.length && !streams.length) {
       setTweetButton(button, "empty", videoMissing
-        ? "还是没拿到视频地址。请先点一下播放，等画面动起来后再点下载。"
-        : "这条没有可下载的照片或视频");
+        ? "Still no video URL. Tap play, wait until it starts, then download again."
+        : "No downloadable photos or videos in this post");
       return;
     }
     const captionText = files.find((item) => item.text)?.text
@@ -966,8 +966,8 @@
       const response = await enqueueOrFail(info.handle, payload);
       if (!response?.ok) {
         const tip = !chrome.runtime?.id
-          ? "插件已更新，请刷新这个页面后再点下载。"
-          : "下载没发出去。请到扩展页重新加载插件，并刷新这个页面后再试。";
+          ? "Extension updated — refresh this page, then download again."
+          : "Download did not start. Reload the extension on the extensions page, refresh this tab, and try again.";
         setTweetButton(button, "fail", tip);
         return;
       }
@@ -999,13 +999,13 @@
       }, "*");
     }
     if (!started) {
-      setTweetButton(button, "empty", "这条没有可下载的照片或视频");
+      setTweetButton(button, "empty", "No downloadable photos or videos in this post");
       return;
     }
-    const extra = videoMissing ? " 还有视频没取到地址，可先播放后再下一次。" : "";
+    const extra = videoMissing ? " A video URL is still missing — play it first, then try again." : "";
     setTweetButton(button, "ok", (phoneDownload()
-      ? `已开始下载，文件名以 ${info.handle} 开头，请到「下载」查看。`
-      : `已开始下载到 @${info.handle} 文件夹。`) + extra);
+      ? `Download started — filenames start with ${info.handle}. Check Downloads.`
+      : `Download started into the @${info.handle} folder.`) + extra);
   }
 
   function mountTweetButtons() {
@@ -1047,8 +1047,8 @@
       button.type = "button";
       button.className = "x-media-dl-tweet";
       button.dataset.xMediaDlBtn = "1";
-      button.title = "下载这条的照片和视频";
-      button.setAttribute("aria-label", "下载这条的照片和视频");
+      button.title = "Download photos and videos from this post";
+      button.setAttribute("aria-label", "Download photos and videos from this post");
       button.innerHTML = TWEET_ICON;
       const halt = (event) => event.stopPropagation();
       button.addEventListener("pointerdown", halt);
@@ -1057,7 +1057,7 @@
         event.preventDefault();
         event.stopPropagation();
         saveTweet(article, button).catch(() => {
-          setTweetButton(button, "fail", "下载失败");
+          setTweetButton(button, "fail", "Download failed");
         });
       });
       slot.appendChild(button);
@@ -1169,8 +1169,8 @@
         running: false,
         phase: "paused",
         message: want === "video"
-          ? "视频栏打不开。请手动点一下「视频」，再点继续。"
-          : "照片栏打不开。请手动点一下「照片」，再点继续。",
+          ? "Could not open the Videos tab. Tap Videos yourself, then Resume."
+          : "Could not open the Photos tab. Tap Photos yourself, then Resume.",
       });
       return "stopped";
     }
@@ -1229,11 +1229,11 @@
 
   async function openView(kind) {
     if (isMediaPath(currentHandle) && viewName() === kind) return "ok";
-    const label = kind === "photo" ? "照片" : "视频";
+    const label = kind === "photo" ? "Photos" : "Videos";
     await patchJob({
       phase: "scrolling",
       running: true,
-      message: `正在打开${label}…`,
+      message: `Opening ${label}…`,
     });
     const link = findViewLink(kind);
     if (link) {
@@ -1257,8 +1257,8 @@
         running: false,
         phase: "paused",
         message: kind === "video"
-          ? "视频栏打不开。请手动点一下「视频」，再点继续。"
-          : "照片栏打不开。请手动点一下「照片」，再点继续。",
+          ? "Could not open the Videos tab. Tap Videos yourself, then Resume."
+          : "Could not open the Photos tab. Tap Photos yourself, then Resume.",
       });
       return "stopped";
     }
@@ -1277,8 +1277,8 @@
       phase: "scrolling",
       running: true,
       message: scanMissed
-        ? (next === "photo" ? "视频查完了，接着检查照片…" : "照片查完了，接着检查视频…")
-        : (next === "photo" ? "视频下完了，接着打开照片…" : "照片下完了，接着下载视频…"),
+        ? (next === "photo" ? "Videos checked — scanning photos next…" : "Photos checked — scanning videos next…")
+        : (next === "photo" ? "Videos done — opening photos next…" : "Photos done — downloading videos next…"),
     });
     const link = findViewLink(next);
     if (link) {
@@ -1302,7 +1302,7 @@
       await patchJob({
         running: false,
         phase: "paused",
-        message: "照片已经下完，但视频栏打不开。请手动点一下「视频」，再点继续。",
+        message: "Photos finished, but the Videos tab would not open. Tap Videos yourself, then Resume.",
       });
       return false;
     }
@@ -1337,7 +1337,7 @@
     await sleep(800);
     while (!stopRequested) {
       if (document.visibilityState !== "visible") {
-        await patchJob({ phase: "scrolling", running: true, message: "请切回这个标签页，页面才会继续向下加载。" });
+        await patchJob({ phase: "scrolling", running: true, message: "Switch back to this tab so scrolling can continue." });
         await sleep(800);
         continue;
       }
@@ -1348,14 +1348,14 @@
           await patchJob({
             running: false,
             phase: "paused",
-            message: "X 暂时不再往下加载。已发现的文件会继续保存，稍后再点继续。",
+            message: "X stopped loading more for now. Files already found will keep saving — tap Resume later.",
           });
           return "paused";
         }
         await patchJob({
           phase: "scrolling",
           running: true,
-          message: `页面加载受限，先等 30 秒再继续（${blocks}/4）。`,
+          message: `Page load limited — waiting 30s before continuing (${blocks}/4).`,
         });
         clickRetry();
         await sleep(30000);
@@ -1389,12 +1389,12 @@
         message: scanMissed
           ? (settling
             ? (batchScope === "all"
-              ? `${viewLabel()}已经不再往下了，确认后去检查另一栏 … 已发现 ${queuedKeys.size} 个`
-              : `${viewLabel()}已经到底了，确认后就结束 … 已发现 ${queuedKeys.size} 个`)
-            : `正在检查${viewLabel()}，漏下的会补上 … 已发现 ${queuedKeys.size} 个`)
+              ? `${viewLabel()} no longer loading more — will check the other tab next … found ${queuedKeys.size}`
+              : `${viewLabel()} reached the end — wrapping up … found ${queuedKeys.size}`)
+            : `Checking ${viewLabel()} for misses … found ${queuedKeys.size}`)
           : since
-            ? `正在找比 ${since} 更新的${viewLabel()} … 已发现 ${queuedKeys.size} 个`
-            : `正在向下加载 @${currentHandle} 的${viewLabel()} … 已发现 ${queuedKeys.size} 个`,
+            ? `Looking for ${viewLabel()} newer than ${since} … found ${queuedKeys.size}`
+            : `Scrolling @${currentHandle} ${viewLabel()} … found ${queuedKeys.size}`,
       });
       if (!scanMissed && canStopAtCursor() && (passedCutoff || knownStreak >= 40)) {
         await commitCursor();
@@ -1431,7 +1431,7 @@
         await patchJob({
           running: false,
           phase: "paused",
-          message: "这次已经滚动了很久。点继续可以接着往下，已保存的文件会跳过。",
+          message: "This run scrolled for a long time. Resume to continue; already-saved files are skipped.",
         });
         return "paused";
       }
@@ -1443,7 +1443,7 @@
     await patchJob({
       phase: "downloading",
       running: true,
-      message: streamsPending ? "正在把已加载的流媒体拼成视频文件…" : "媒体页已经滚完，正在把文件保存到下载目录…",
+      message: streamsPending ? "Assembling loaded streams into video files…" : "Media tab scrolled through — saving files to Downloads…",
     });
     let idleTicks = 0;
     while (!stopRequested) {
@@ -1468,31 +1468,31 @@
 
   function savePlace(handle) {
     return phoneDownload()
-      ? `「下载」，文件名以 ${handle} 开头；用浏览器打开 ${handle}_album.html 看图和文案`
-      : `「下载 / ${handle}」；打开 album.html 可看图和文案`;
+      ? `Downloads, filenames start with ${handle}; open ${handle}_album.html in a browser for media and captions`
+      : `Downloads / ${handle}; open album.html for media and captions`;
   }
 
   function startMessage(resumeView) {
     const root = savePlace(currentHandle);
     if (scanMissed) {
-      if (batchScope === "photo") return `正在检查 @${currentHandle} 的照片，漏下的会补进${root}…`;
-      if (batchScope === "video") return `正在检查 @${currentHandle} 的视频，漏下的会补进${root}…`;
-      return `正在检查 @${currentHandle} 的照片和视频，漏下的会补进${root}…`;
+      if (batchScope === "photo") return `Checking @${currentHandle} photos — misses go into ${root}…`;
+      if (batchScope === "video") return `Checking @${currentHandle} videos — misses go into ${root}…`;
+      return `Checking @${currentHandle} photos and videos — misses go into ${root}…`;
     }
-    if (batchScope === "photo") return `正在下载 @${currentHandle} 的照片，保存到${root}。碰到上次那条就停。`;
-    if (batchScope === "video") return `正在下载 @${currentHandle} 的视频，保存到${root}。碰到上次那条就停。`;
-    if (resumeView === "video") return `照片下完了，正在下载 @${currentHandle} 的视频，保存到${root}…`;
-    return `先下载 @${currentHandle} 的照片，再下载视频。都放在${root}。`;
+    if (batchScope === "photo") return `Downloading @${currentHandle} photos to ${root}. Stops at the last saved post.`;
+    if (batchScope === "video") return `Downloading @${currentHandle} videos to ${root}. Stops at the last saved post.`;
+    if (resumeView === "video") return `Photos done — downloading @${currentHandle} videos to ${root}…`;
+    return `Photos first for @${currentHandle}, then videos. All go into ${root}.`;
   }
 
   function albumStatusNote(response) {
     if (response?.skipped) {
-      if (response.reason === "unchanged") return "图集已有，无需更新。";
+      if (response.reason === "unchanged") return " Album already up to date.";
       return "";
     }
-    if (response?.ok) return "图集已保存。";
-    if (response?.error) return `图集生成失败：${response.error}`;
-    return "图集可能未写出，请重新加载插件后再试一次。";
+    if (response?.ok) return " Album saved.";
+    if (response?.error) return ` Album failed: ${response.error}`;
+    return " Album may not have been written — reload the extension and try again.";
   }
 
   async function flushAlbumNow(handle, announce) {
@@ -1502,13 +1502,13 @@
         running: true,
         phase: "album",
         handle,
-        message: "正在整理图集…",
+        message: "Building album…",
       });
     }
     try {
       return await send({ type: "FLUSH_ALBUM", handle });
     } catch (err) {
-      return { ok: false, error: String(err?.message || err || "图集导出失败") };
+      return { ok: false, error: String(err?.message || err || "Album export failed") };
     }
   }
 
@@ -1516,7 +1516,7 @@
     if (loopRunning) return;
     const profile = parseProfile(location.pathname);
     if (!profile) {
-      await patchJob({ running: false, phase: "error", handle: "", message: "请先打开某个用户的主页，地址类似 x.com/用户名 。" });
+      await patchJob({ running: false, phase: "error", handle: "", message: "Open a user profile first (URL like x.com/username)." });
       return;
     }
 
@@ -1641,14 +1641,14 @@
     if (scanMissed) {
       const what = scopeLabel(batchScope);
       return added
-        ? `检查完成。补上了 ${added} 个漏下的${what}，其余 ${alreadyKeys.size} 个之前已有。`
-        : `检查完成。${what}里没有发现漏下的，已有 ${alreadyKeys.size} 个。`;
+        ? `Scan done. Filled in ${added} missing ${what}; ${alreadyKeys.size} were already saved.`
+        : `Scan done. No missing ${what} found; ${alreadyKeys.size} already saved.`;
     }
-    const skipped = skippedKeys.size ? `，${skippedKeys.size} 个没有可保存的地址` : "";
-    const streams = streamFailed.size ? `，${streamFailed.size} 个流媒体没有拼成文件` : "";
-    const existing = alreadyKeys.size ? `，${alreadyKeys.size} 个之前已保存` : "";
-    const stopNote = caughtUp ? "。已经到上次保存的位置，更早的没有重复下载" : "";
-    return `完成。本次新保存 ${saved} 个到${place}${existing}${skipped}${streams}${failed ? `，失败 ${failed} 个` : ""}${stopNote}。`;
+    const skipped = skippedKeys.size ? `, ${skippedKeys.size} had no saveable URL` : "";
+    const streams = streamFailed.size ? `, ${streamFailed.size} streams did not assemble` : "";
+    const existing = alreadyKeys.size ? `, ${alreadyKeys.size} already saved` : "";
+    const stopNote = caughtUp ? ". Reached the last saved position — older posts were not re-downloaded" : "";
+    return `Done. Newly saved ${saved} to ${place}${existing}${skipped}${streams}${failed ? `, failed ${failed}` : ""}${stopNote}.`;
   }
 
   function stopJob(message) {
@@ -1671,7 +1671,7 @@
       found: queuedKeys.size,
       skipped: skippedKeys.size,
       already: alreadyKeys.size,
-      message: message || "已停止。再次开始会跳过已经保存的文件。",
+      message: message || "Stopped. Starting again skips files already saved.",
     });
   }
 
@@ -1712,13 +1712,13 @@
           #hide { background: #eee; color: #111; }
         </style>
         <div class="card">
-          <div class="title">X 媒体下载</div>
+          <div class="title">X Media Downloader</div>
           <div class="handle"></div>
           <div class="msg"></div>
           <div class="stats"></div>
           <div class="row">
-            <button id="act" type="button">停止</button>
-            <button id="hide" type="button">隐藏</button>
+            <button id="act" type="button">Stop</button>
+            <button id="hide" type="button">Hide</button>
           </div>
         </div>
       `;
@@ -1749,10 +1749,10 @@
       msgEl.textContent = view.message || "";
       const saved = lastDownloads.completed || 0;
       const failed = lastDownloads.failed || 0;
-      statsEl.textContent = `发现 ${view.found || 0} · 本次保存 ${saved} · 已有 ${view.already || 0} · 失败 ${failed}`;
-      if (view.running) action.textContent = "停止";
-      else if (view.phase === "paused") action.textContent = "继续";
-      else action.textContent = "关闭";
+      statsEl.textContent = `Found ${view.found || 0} · Saved ${saved} · Already ${view.already || 0} · Failed ${failed}`;
+      if (view.running) action.textContent = "Stop";
+      else if (view.phase === "paused") action.textContent = "Resume";
+      else action.textContent = "Close";
     } catch (err) {
       /* 面板没挂上时不影响下载 */
     }
@@ -1822,11 +1822,11 @@
       view.phase = "scrolling";
       view.mode = name === "scan" ? "scan" : "download";
       view.scope = scope;
-      view.message = "正在开始…";
+      view.message = "Starting…";
       mirrorStatus();
       showPanel();
       start(false, name === "scan" ? "scan" : "download", "", scope).catch((err) => {
-        patchJob({ running: false, phase: "error", message: err?.message || "启动失败" });
+        patchJob({ running: false, phase: "error", message: err?.message || "Failed to start" });
       }).finally(() => {
         launchLock = false;
       });

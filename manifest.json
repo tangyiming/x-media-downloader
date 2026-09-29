@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "X 媒体下载",
-  "version": "1.1.39",
-  "description": "可选择只下载照片、只下载视频或全部，并生成 album.html 图集页。电脑按账号分文件夹，手机把账号名写在文件名前面。",
+  "name": "X Media Downloader",
+  "version": "1.2.0",
+  "description": "Download photos, videos, or both from an open X profile, and build an album.html gallery. Desktop saves into an account folder; Android prefixes filenames with the account name.",
   "minimum_chrome_version": "111",
   "permissions": ["downloads", "storage", "scripting"],
   "host_permissions": [
@@ -15,7 +15,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "X 媒体下载",
+    "default_title": "X Media Downloader",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

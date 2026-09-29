@@ -34,15 +34,15 @@ function render(status) {
   const usable = !!status;
   lastHandle = status?.onProfile && status.handle ? String(status.handle) : "";
   if (!status?.onProfile) {
-    accountEl.textContent = "当前不是用户主页";
+    accountEl.textContent = "Not on a user profile";
   } else {
     accountEl.textContent = status.section === "media"
-      ? `@${status.handle} · 媒体页`
-      : `@${status.handle} · 开始后会切到媒体页`;
+      ? `@${status.handle} · Media tab`
+      : `@${status.handle} · Will switch to Media when you start`;
   }
   messageEl.textContent = Date.now() < holdUntil
     ? holdText
-    : (view.message || "打开用户主页后选择下照片、下视频，或全部。");
+    : (view.message || "Open a profile, then download photos, videos, or all.");
   foundEl.textContent = String(view.found || 0);
   savedEl.textContent = String(downloads.completed || 0);
   alreadyEl.textContent = String(view.already || 0);
@@ -51,9 +51,9 @@ function render(status) {
     const mode = button.dataset.mode === "scan" ? "scan" : "download";
     const scope = scopeOf(button.dataset.scope);
     const active = lastView.mode === mode && lastView.scope === scope;
-    const labels = { photo: "照片", video: "视频", all: "全部" };
-    if (running && active) button.textContent = "停止";
-    else if (!running && lastView.phase === "paused" && active) button.textContent = "继续";
+    const labels = { photo: "Photos", video: "Videos", all: "All" };
+    if (running && active) button.textContent = "Stop";
+    else if (!running && lastView.phase === "paused" && active) button.textContent = "Resume";
     else button.textContent = labels[scope];
     button.disabled = !usable || (running && !active);
   }
@@ -91,7 +91,7 @@ async function refresh() {
   const tab = await activeTab();
   tabId = tab?.id ?? null;
   if (!tabId || !isX(tab.url)) {
-    render({ onProfile: false, view: { message: "请先打开 x.com 上的用户主页。" } });
+    render({ onProfile: false, view: { message: "Open a user profile on x.com first." } });
     return;
   }
   try {
@@ -99,7 +99,7 @@ async function refresh() {
     if (!status) {
       render({
         onProfile: false,
-        view: { message: "这个页面还没有载入插件。请刷新该 X 页面后再开始。" },
+        view: { message: "This page has not loaded the extension yet. Refresh the X tab, then try again." },
       });
       return;
     }
@@ -108,13 +108,13 @@ async function refresh() {
       const latest = await chrome.runtime.sendMessage({ type: "GET_DOWNLOADS" });
       if (latest && typeof latest.completed === "number") downloads = latest;
     } catch (err) {
-      /* 用页面上已经记下的数字 */
+      /* Fall back to numbers already mirrored from the page */
     }
     render({ ...status, downloads });
   } catch (err) {
     render({
       onProfile: false,
-      view: { message: "这个页面还没有载入插件。请刷新该 X 页面后再开始。" },
+      view: { message: "This page has not loaded the extension yet. Refresh the X tab, then try again." },
     });
   }
 }
@@ -128,15 +128,15 @@ function hold(text) {
 async function runChoice(button) {
   const tab = await activeTab();
   if (!tab?.id || !isX(tab.url)) {
-    hold("请先打开 x.com 上的用户主页。");
+    hold("Open a user profile on x.com first.");
     return;
   }
   const mode = button.dataset.mode === "scan" ? "scan" : "download";
   const scope = scopeOf(button.dataset.scope);
   const active = running && lastView.mode === mode && lastView.scope === scope;
   for (const item of choiceButtons) item.disabled = true;
-  button.textContent = active ? "正在停止…" : "正在开始…";
-  hold(active ? "正在停止…" : "正在开始…");
+  button.textContent = active ? "Stopping…" : "Starting…";
+  hold(active ? "Stopping…" : "Starting…");
   try {
     if (active) {
       await pageCall(tab.id, "stop");
@@ -145,12 +145,12 @@ async function runChoice(button) {
     } else {
       const current = await pageCall(tab.id, "status");
       if (!current?.hooked) {
-        hold("请先刷新这个 X 页面，再点批量下载。");
+        hold("Refresh this X page first, then start a batch download.");
         refresh();
         return;
       }
       if (!current.onProfile) {
-        hold("请先打开某个用户的主页，地址类似 x.com/用户名 。");
+        hold("Open a user profile first (URL like x.com/username).");
         refresh();
         return;
       }
@@ -160,7 +160,7 @@ async function runChoice(button) {
       if (started?.view?.message) messageEl.textContent = started.view.message;
     }
   } catch (err) {
-    hold("请刷新这个 X 页面后再试。");
+    hold("Refresh this X page and try again.");
   }
   refresh();
 }
@@ -178,17 +178,17 @@ document.getElementById("folder").addEventListener("click", () => {
 resetBtn.addEventListener("click", async () => {
   if (!lastHandle || running) return;
   const ok = window.confirm(
-    `清除 @${lastHandle} 的已下记录、游标和图集缓存？\n本地已下载的文件不会删除。之后可用「检查漏下」重新补视频或照片。`
+    `Clear @${lastHandle}'s download history, cursors, and album cache?\nFiles already on disk are not deleted. You can use Check for misses afterward to backfill photos or videos.`
   );
   if (!ok) return;
   resetBtn.disabled = true;
-  hold("正在重置进度…");
+  hold("Resetting progress…");
   try {
     const result = await chrome.runtime.sendMessage({ type: "RESET_PROGRESS", handle: lastHandle });
-    if (result?.ok) hold(`已重置 @${lastHandle} 的进度。请再点「检查漏下」选视频或全部。`);
-    else hold("重置失败，请重新加载插件后再试。");
+    if (result?.ok) hold(`Progress reset for @${lastHandle}. Use Check for misses with Videos or All.`);
+    else hold("Reset failed. Reload the extension and try again.");
   } catch (err) {
-    hold("重置失败，请重新加载插件后再试。");
+    hold("Reset failed. Reload the extension and try again.");
   }
   refresh();
 });
@@ -197,7 +197,7 @@ async function boot() {
   try {
     await chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
   } catch (err) {
-    /* 后台脚本也会放开，这里失败不挡住弹窗 */
+    /* Background also opens access; failure here should not block the popup */
   }
   refresh();
   setInterval(refresh, 800);
