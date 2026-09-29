@@ -83,6 +83,47 @@ function accountPath(handle, filename) {
   return phoneDownload() ? `${folder}_${file}` : `${folder}/${file}`;
 }
 
+function canCreateObjectURL() {
+  try {
+    return typeof URL !== "undefined" && typeof URL.createObjectURL === "function";
+  } catch (err) {
+    return false;
+  }
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const slice = bytes.subarray(i, i + chunk);
+    let part = "";
+    for (let j = 0; j < slice.length; j++) part += String.fromCharCode(slice[j]);
+    binary += part;
+  }
+  return btoa(binary);
+}
+
+/** MV3 service worker 可能没有 createObjectURL；小文件改走 data URL。 */
+async function blobToDownloadUrl(blob) {
+  if (canCreateObjectURL()) return { url: URL.createObjectURL(blob), revoke: true };
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length > 1_800_000) {
+    throw new Error("文件过大，当前环境无法中转下载");
+  }
+  const type = blob.type || "application/octet-stream";
+  return { url: `data:${type};base64,${bytesToBase64(bytes)}`, revoke: false };
+}
+
+function revokeDownloadUrl(url, revoke) {
+  if (!revoke || !url) return;
+  try {
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    /* SW 上可能没有 revokeObjectURL */
+  }
+}
+
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   const wanted = takePath(item.url) || takePath(item.finalUrl);
   if (wanted) {
@@ -220,11 +261,13 @@ async function beginDownload(entry) {
   if (entry.viaBlob) {
     const response = await fetch(url, { credentials: "omit" });
     if (!response.ok || stopped || entry.generation !== generation) return null;
-    entry.blobUrl = URL.createObjectURL(await response.blob());
+    const converted = await blobToDownloadUrl(await response.blob());
+    entry.blobUrl = converted.url;
+    entry.blobRevoke = converted.revoke;
     url = entry.blobUrl;
   }
   if ((stopped && !entry.solo) || entry.generation !== generation) {
-    if (entry.blobUrl) URL.revokeObjectURL(entry.blobUrl);
+    revokeDownloadUrl(entry.blobUrl, entry.blobRevoke);
     return null;
   }
   const filename = accountPath(entry.handle, entry.item.filename);
@@ -235,7 +278,7 @@ async function beginDownload(entry) {
       (id) => {
         if (chrome.runtime.lastError || id == null) {
           cancelPath(url, filename);
-          if (entry.blobUrl) URL.revokeObjectURL(entry.blobUrl);
+          revokeDownloadUrl(entry.blobUrl, entry.blobRevoke);
           resolve(null);
           return;
         }
@@ -257,13 +300,7 @@ async function handleDelta(delta) {
   if (state !== "complete" && state !== "interrupted") return;
 
   activeMeta.delete(delta.id);
-  if (entry.blobUrl) {
-    try {
-      URL.revokeObjectURL(entry.blobUrl);
-    } catch (err) {
-      /* SW 上可能没有 revokeObjectURL */
-    }
-  }
+  revokeDownloadUrl(entry.blobUrl, entry.blobRevoke === true);
   if (entry.albumWrite) {
     const waiter = albumWaiters.get(delta.id);
     if (waiter) {
@@ -349,10 +386,19 @@ async function finishStream(meta, chunks) {
   if ((stopped && !meta.solo) || meta.generation !== generation || !chunks.length) return;
   const handle = folderName(meta.handle);
   const done = await loadDone(handle);
-  if (done.has(meta.key)) return;
+  if (done.has(meta.key) && !meta.solo) return;
   const blob = new Blob(chunks, { type: meta.ext === "mp4" ? "video/mp4" : "video/mp2t" });
   chunks.length = 0;
-  const blobUrl = URL.createObjectURL(blob);
+  let converted;
+  try {
+    converted = await blobToDownloadUrl(blob);
+  } catch (err) {
+    failed += 1;
+    publishStats();
+    pump();
+    return;
+  }
+  const blobUrl = converted.url;
   const filename = accountPath(handle, meta.filename);
   reservePath(blobUrl, filename, "uniquify");
   upsertAlbumMedia(handle, {
@@ -371,7 +417,7 @@ async function finishStream(meta, chunks) {
     (id) => {
       if (chrome.runtime.lastError || id == null) {
         cancelPath(blobUrl, filename);
-        URL.revokeObjectURL(blobUrl);
+        revokeDownloadUrl(blobUrl, converted.revoke);
         active = Math.max(0, active - 1);
         failed += 1;
         publishStats();
@@ -391,6 +437,7 @@ async function finishStream(meta, chunks) {
           trackCursor: meta.trackCursor !== false,
         },
         blobUrl,
+        blobRevoke: converted.revoke,
         generation: meta.generation,
         viaBlob: true,
         localFile: true,
@@ -406,7 +453,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return;
   }
   if (message?.type === "ENQUEUE") {
-    enqueue(message.handle, message.items || []).then(sendResponse);
+    enqueue(message.handle, message.items || [])
+      .then((result) => {
+        try {
+          sendResponse(result);
+        } catch (err) {
+          /* 频道已关闭时下载仍会继续 */
+        }
+      })
+      .catch(() => {
+        try {
+          sendResponse({ ok: false, error: "enqueue_failed" });
+        } catch (err) {
+          /* ignore */
+        }
+      });
     return true;
   }
   if (message?.type === "FLUSH_ALBUM") {
@@ -495,12 +556,13 @@ async function enqueue(handle, items) {
   for (const item of items) {
     if (!item?.key || !item.filename) continue;
     if (!allowedDownloadUrl(item.url)) continue;
-    const inFlight = queue.some((entry) => entry.item.key === item.key) || [...activeMeta.values()].some((entry) => entry.item.key === item.key);
-    if (inFlight) {
+    const force = item.solo === true;
+    const inFlight = queue.some((entry) => entry.item.key === item.key) || [...activeMeta.values()].some((entry) => entry.item?.key === item.key);
+    if (inFlight && !force) {
       albumJobs.push(upsertAlbumMedia(safeHandle, item));
       continue;
     }
-    if (done.has(item.key)) {
+    if (!force && done.has(item.key)) {
       alreadyKeys.push(item.key);
       albumJobs.push(upsertAlbumMedia(safeHandle, item));
       continue;
@@ -519,19 +581,16 @@ async function enqueue(handle, items) {
         kind: item.kind === "video" ? "video" : "photo",
       },
       viaBlob: false,
-      solo: item.solo === true,
+      solo: force,
       generation,
     });
     albumJobs.push(upsertAlbumMedia(safeHandle, item));
   }
+  // 先开泵再记图集，避免单条下载等 upsert 时消息通道超时
   if (!stopped || items.some((item) => item?.solo)) pump();
   else publishStats();
   if (albumJobs.length) {
-    try {
-      await Promise.all(albumJobs);
-    } catch (err) {
-      /* 已有记录仍继续，flush 时再读 storage */
-    }
+    Promise.all(albumJobs).catch(() => {});
   }
   return { ok: true, alreadyKeys };
 }

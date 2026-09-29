@@ -87,14 +87,33 @@
       pending = Promise.reject(err);
     }
     return Promise.resolve(pending).then(
-      (response) => response ?? null,
-      () => {
-        if (attempt >= 4) return null;
+      (response) => {
+        if (response != null) return response;
+        // 有些环境下 SW 刚醒时会回 undefined，再试几次
+        if (attempt >= 6) return null;
         return new Promise((resolve) => {
-          setTimeout(() => resolve(send(message, attempt + 1)), 250 * (attempt + 1));
+          setTimeout(() => resolve(send(message, attempt + 1)), 200 * (attempt + 1));
+        });
+      },
+      (err) => {
+        const text = String(err?.message || err || "");
+        if (/Extension context invalidated|message port closed|Receiving end does not exist/i.test(text)) {
+          return null;
+        }
+        if (attempt >= 6) return null;
+        return new Promise((resolve) => {
+          setTimeout(() => resolve(send(message, attempt + 1)), 200 * (attempt + 1));
         });
       }
     );
+  }
+
+  async function enqueueOrFail(handle, items) {
+    let response = await send({ type: "ENQUEUE", handle, items });
+    if (response?.ok) return response;
+    await sleep(400);
+    response = await send({ type: "ENQUEUE", handle, items });
+    return response;
   }
 
   function refreshDownloads() {
@@ -684,6 +703,39 @@
     button.dataset.busy = state === "busy" ? "1" : "0";
     button.title = title;
     button.setAttribute("aria-label", title);
+    if (state !== "busy" || /等待|查找/.test(String(title || ""))) showTweetToast(button, title);
+  }
+
+  function showTweetToast(anchor, text) {
+    const msg = String(text || "").trim();
+    if (!msg) return;
+    let toast = document.getElementById("x-media-dl-tweet-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "x-media-dl-tweet-toast";
+      toast.style.cssText = [
+        "position:fixed",
+        "z-index:2147483646",
+        "left:50%",
+        "bottom:24px",
+        "transform:translateX(-50%)",
+        "max-width:min(92vw,420px)",
+        "padding:10px 14px",
+        "border-radius:12px",
+        "background:rgba(15,20,25,.92)",
+        "color:#fff",
+        "font:14px/1.45 system-ui,-apple-system,sans-serif",
+        "box-shadow:0 8px 28px rgba(0,0,0,.28)",
+        "pointer-events:none",
+      ].join(";");
+      (document.documentElement || document.body).appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = "1";
+    clearTimeout(showTweetToast.timer);
+    showTweetToast.timer = setTimeout(() => {
+      toast.style.opacity = "0";
+    }, 2800);
   }
 
   function articleText(article) {
@@ -694,15 +746,34 @@
 
   function tweetIdentity(article) {
     const time = article.querySelector("time");
-    const link = time?.closest("a[href*='/status/']");
-    const href = link?.href || "";
+    const link = time?.closest("a[href*='/status/']")
+      || article.querySelector("a[href*='/status/']");
+    const href = link?.href || location.href || "";
     const match = href.match(/https?:\/\/(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/i);
     if (!match) return null;
     return {
       handle: match[1],
       tweetId: match[2],
-      created: time.getAttribute("datetime") || "",
+      created: time?.getAttribute("datetime") || "",
     };
+  }
+
+  function tweetIdSet(article, info) {
+    const ids = new Set();
+    if (info?.tweetId) ids.add(String(info.tweetId));
+    const pathMatch = String(location.pathname || "").match(/\/status\/(\d+)/);
+    if (pathMatch) ids.add(pathMatch[1]);
+    for (const node of article.querySelectorAll("img, source, [style*='twimg.com'], [poster]")) {
+      const blob = [
+        node.currentSrc || "",
+        node.src || "",
+        node.getAttribute?.("poster") || "",
+        node.getAttribute?.("style") || "",
+      ].join(" ");
+      const matched = blob.matchAll(/\/(?:amplify_video_thumb|ext_tw_video_thumb|tweet_video_thumb)\/(\d+)/g);
+      for (const hit of matched) ids.add(hit[1]);
+    }
+    return ids;
   }
 
   function outsideQuote(node, article) {
@@ -710,18 +781,59 @@
     return !quote || !article.contains(quote);
   }
 
+  function nudgeTweetVideo(article) {
+    const players = [...article.querySelectorAll("[data-testid='videoPlayer'], [data-testid='videoComponent'], video")];
+    for (const node of players) {
+      if (!outsideQuote(node, article)) continue;
+      const video = node.tagName === "VIDEO" ? node : node.querySelector("video");
+      if (video) {
+        try {
+          video.muted = true;
+          const pending = video.play();
+          if (pending && typeof pending.catch === "function") pending.catch(() => {});
+        } catch (err) {
+          /* 自动播放可能被拦，继续点播放控件 */
+        }
+      }
+      const clickable = node.closest("div[role='button'], button") || node.querySelector("[role='button'], button") || node;
+      try {
+        clickable.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+        clickable.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      } catch (err) {
+        try {
+          clickable.click();
+        } catch (err2) {
+          /* ignore */
+        }
+      }
+      break;
+    }
+  }
+
   function collectTweetItems(article, info) {
     const items = [];
     const seen = new Set();
     const text = articleText(article);
+    const ids = tweetIdSet(article, info);
     const add = (item) => {
       if (!item?.key || seen.has(item.key) || item.skipped) return;
       seen.add(item.key);
       if (!item.text && text) item = { ...item, text };
+      if (!item.tweetId && info.tweetId) item = { ...item, tweetId: info.tweetId };
+      if (!item.created && info.created) item = { ...item, created: info.created };
+      if (!item.author && info.handle) item = { ...item, author: info.handle };
       items.push(item);
     };
     for (const item of captured.values()) {
-      if (String(item.tweetId || "") !== info.tweetId) continue;
+      const itemId = String(item.tweetId || "");
+      if (itemId) {
+        if (!ids.has(itemId)) continue;
+      } else if (info.handle && item.author && item.author.toLowerCase() === info.handle.toLowerCase()) {
+        // GraphQL 偶发没带 tweetId：仅在当前状态页且作者一致时收下
+        if (!/\/status\/\d+/.test(location.pathname)) continue;
+      } else {
+        continue;
+      }
       add(item);
     }
     let photoIndex = items.filter((item) => item.kind === "photo").length;
@@ -749,31 +861,31 @@
     let videoIndex = items.filter((item) => item.kind === "video" || item.kind === "stream").length;
     if (!videoIndex) {
       for (const video of article.querySelectorAll("video, source")) {
-      if (!outsideQuote(video, article)) continue;
-      const src = video.currentSrc || video.src || video.getAttribute?.("src") || "";
-      if (!/video\.twimg\.com/i.test(src) || src.startsWith("blob:")) continue;
-      let url = "";
-      try {
-        const parsed = new URL(src);
-        if (parsed.protocol === "https:" && parsed.hostname === "video.twimg.com") url = parsed.toString();
-      } catch (err) {
-        url = "";
-      }
-      if (!url) continue;
-      videoIndex += 1;
-      const key = `video:${url}`;
-      add({
-        key,
-        url: /\.m3u8(\?|$)/i.test(url) ? "" : url,
-        playlistUrl: /\.m3u8(\?|$)/i.test(url) ? url : "",
-        kind: /\.m3u8(\?|$)/i.test(url) ? "stream" : "video",
-        ext: /\.m3u8(\?|$)/i.test(url) ? "ts" : "mp4",
-        author: info.handle,
-        tweetId: info.tweetId,
-        created: info.created,
-        text,
-        index: videoIndex,
-      });
+        if (!outsideQuote(video, article)) continue;
+        const src = video.currentSrc || video.src || video.getAttribute?.("src") || "";
+        if (!/video\.twimg\.com/i.test(src) || src.startsWith("blob:")) continue;
+        let url = "";
+        try {
+          const parsed = new URL(src);
+          if (parsed.protocol === "https:" && parsed.hostname === "video.twimg.com") url = parsed.toString();
+        } catch (err) {
+          url = "";
+        }
+        if (!url) continue;
+        videoIndex += 1;
+        const key = `video:${url}`;
+        add({
+          key,
+          url: /\.m3u8(\?|$)/i.test(url) ? "" : url,
+          playlistUrl: /\.m3u8(\?|$)/i.test(url) ? url : "",
+          kind: /\.m3u8(\?|$)/i.test(url) ? "stream" : "video",
+          ext: /\.m3u8(\?|$)/i.test(url) ? "ts" : "mp4",
+          author: info.handle,
+          tweetId: info.tweetId,
+          created: info.created,
+          text,
+          index: videoIndex,
+        });
       }
     }
     return items;
@@ -786,6 +898,34 @@
     return false;
   }
 
+  async function waitForTweetMedia(article, info, button) {
+    let items = collectTweetItems(article, info);
+    const usable = () => {
+      const files = items.filter((item) => item.url && (item.kind === "photo" || item.kind === "video"));
+      const streams = items.filter((item) => item.kind === "stream" && item.playlistUrl);
+      return { files, streams, ready: files.length + streams.length > 0 };
+    };
+    let found = usable();
+    if (found.ready) return { items, ...found, waited: false };
+
+    const needsVideo = tweetHasVideo(article);
+    if (needsVideo) {
+      setTweetButton(button, "busy", "正在等待视频地址…");
+      nudgeTweetVideo(article);
+    }
+
+    const deadline = Date.now() + (needsVideo ? 10000 : 2500);
+    while (Date.now() < deadline) {
+      window.postMessage({ source: "x-media-dl", type: "pull" }, "*");
+      await sleep(350);
+      items = collectTweetItems(article, info);
+      found = usable();
+      if (found.ready) return { items, ...found, waited: true };
+      if (needsVideo && Date.now() > deadline - 6000) nudgeTweetVideo(article);
+    }
+    return { items, ...usable(), waited: true };
+  }
+
   async function saveTweet(article, button) {
     if (button.dataset.busy === "1") return;
     const info = tweetIdentity(article);
@@ -795,14 +935,14 @@
     }
     setTweetButton(button, "busy", "正在查找这条里的照片和视频…");
     window.postMessage({ source: "x-media-dl", type: "pull" }, "*");
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    const items = collectTweetItems(article, info);
-    const files = items.filter((item) => item.url && (item.kind === "photo" || item.kind === "video"));
-    const streams = items.filter((item) => item.kind === "stream" && item.playlistUrl);
+    await sleep(120);
+    const waited = await waitForTweetMedia(article, info, button);
+    const files = waited.files;
+    const streams = waited.streams;
     const videoMissing = tweetHasVideo(article) && !files.some((item) => item.kind === "video") && !streams.length;
     if (!files.length && !streams.length) {
       setTweetButton(button, "empty", videoMissing
-        ? "视频地址还没出现。请先点开这条视频，再点下载。"
+        ? "还是没拿到视频地址。请先点一下播放，等画面动起来后再点下载。"
         : "这条没有可下载的照片或视频");
       return;
     }
@@ -821,24 +961,23 @@
       solo: true,
       trackCursor: false,
     }));
-    let already = 0;
     let started = 0;
     if (payload.length) {
-      const response = await send({ type: "ENQUEUE", handle: info.handle, items: payload });
-      if (!response) {
-        setTweetButton(button, "fail", "下载没发出去。请重新加载插件后再试。");
+      const response = await enqueueOrFail(info.handle, payload);
+      if (!response?.ok) {
+        const tip = !chrome.runtime?.id
+          ? "插件已更新，请刷新这个页面后再点下载。"
+          : "下载没发出去。请到扩展页重新加载插件，并刷新这个页面后再试。";
+        setTweetButton(button, "fail", tip);
         return;
       }
-      already += (response.alreadyKeys || []).length;
-      started += payload.length - (response.alreadyKeys || []).length;
-      send({ type: "FLUSH_ALBUM", handle: info.handle }).catch(() => {});
+      started += payload.length;
+      // 单条先别立刻写 album.html，避免和下载抢通道；稍后补刷
+      setTimeout(() => {
+        send({ type: "FLUSH_ALBUM", handle: info.handle }).catch(() => {});
+      }, 2500);
     }
     for (const item of streams) {
-      const response = await send({ type: "HAS_DONE", handle: info.handle, keys: [item.key] });
-      if (response?.done?.includes(item.key)) {
-        already += 1;
-        continue;
-      }
       started += 1;
       soloButtons.set(item.key, button);
       window.postMessage({
@@ -859,14 +998,14 @@
         },
       }, "*");
     }
-    if (!started && already) {
-      setTweetButton(button, "ok", "这条里的照片和视频已经保存过了");
+    if (!started) {
+      setTweetButton(button, "empty", "这条没有可下载的照片或视频");
       return;
     }
-    const extra = videoMissing ? "视频请先点开再下一次。" : "";
+    const extra = videoMissing ? " 还有视频没取到地址，可先播放后再下一次。" : "";
     setTweetButton(button, "ok", (phoneDownload()
-      ? `已开始下载，文件名以 ${info.handle} 开头，在「下载」里。可用浏览器打开 album.html 看图和文案。`
-      : `已开始下载到 @${info.handle} 文件夹。打开里面的 album.html 可看图和文案。`) + extra);
+      ? `已开始下载，文件名以 ${info.handle} 开头，请到「下载」查看。`
+      : `已开始下载到 @${info.handle} 文件夹。`) + extra);
   }
 
   function mountTweetButtons() {

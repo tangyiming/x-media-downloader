@@ -236,8 +236,9 @@
     let local = ctx;
     if (isTweetNode(node)) {
       const tweet = tweetPayload(node);
+      const idCandidate = tweet.rest_id || tweet.legacy?.id_str || tweet.id_str || "";
       local = {
-        tweetId: /^\d{5,}$/.test(tweet.rest_id || "") ? tweet.rest_id : ctx.tweetId,
+        tweetId: /^\d{5,}$/.test(String(idCandidate)) ? String(idCandidate) : ctx.tweetId,
         created: tweet.legacy?.created_at || ctx.created || "",
         author: authorOf(node) || ctx.author || "",
         text: tweetText(node) || ctx.text || "",
