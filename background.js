@@ -325,7 +325,7 @@ async function handleDelta(delta) {
       schedulePersist(entry.handle);
       await noteCursor(entry.handle, entry.item);
       completed += 1;
-      upsertAlbumMedia(entry.handle, entry.item).catch(() => {});
+      if (!entry.solo) upsertAlbumMedia(entry.handle, entry.item).catch(() => {});
     } else if (!stopped) {
       failed += 1;
     }
@@ -339,7 +339,7 @@ async function handleDelta(delta) {
     schedulePersist(entry.handle);
     await noteCursor(entry.handle, entry.item);
     completed += 1;
-    upsertAlbumMedia(entry.handle, entry.item).catch(() => {});
+    if (!entry.solo) upsertAlbumMedia(entry.handle, entry.item).catch(() => {});
   } else if (stopped && !entry.solo) {
     queue.unshift(entry);
   } else if (stopped && delta.error?.current === "USER_CANCELED") {
@@ -401,15 +401,17 @@ async function finishStream(meta, chunks) {
   const blobUrl = converted.url;
   const filename = accountPath(handle, meta.filename);
   reservePath(blobUrl, filename, "uniquify");
-  upsertAlbumMedia(handle, {
-    key: meta.key,
-    filename: meta.filename,
-    tweetId: meta.tweetId || "",
-    created: meta.created || "",
-    text: meta.text || "",
-    kind: "video",
-    view: "video",
-  }).catch(() => {});
+  if (!meta.solo) {
+    upsertAlbumMedia(handle, {
+      key: meta.key,
+      filename: meta.filename,
+      tweetId: meta.tweetId || "",
+      created: meta.created || "",
+      text: meta.text || "",
+      kind: "video",
+      view: "video",
+    }).catch(() => {});
+  }
   active += 1;
   publishStats();
   chrome.downloads.download(
@@ -584,9 +586,9 @@ async function enqueue(handle, items) {
       solo: force,
       generation,
     });
-    albumJobs.push(upsertAlbumMedia(safeHandle, item));
+    // 单条下载不写图集；album.html 只在批量结束时生成
+    if (!force) albumJobs.push(upsertAlbumMedia(safeHandle, item));
   }
-  // 先开泵再记图集，避免单条下载等 upsert 时消息通道超时
   if (!stopped || items.some((item) => item?.solo)) pump();
   else publishStats();
   if (albumJobs.length) {

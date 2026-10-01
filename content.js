@@ -972,10 +972,6 @@
         return;
       }
       started += payload.length;
-      // 单条先别立刻写 album.html，避免和下载抢通道；稍后补刷
-      setTimeout(() => {
-        send({ type: "FLUSH_ALBUM", handle: info.handle }).catch(() => {});
-      }, 2500);
     }
     for (const item of streams) {
       started += 1;

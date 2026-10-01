@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X Media Downloader",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Download photos, videos, or both from an open X profile, and build an album.html gallery. Desktop saves into an account folder; Android prefixes filenames with the account name.",
   "minimum_chrome_version": "111",
   "permissions": ["downloads", "storage", "scripting"],
